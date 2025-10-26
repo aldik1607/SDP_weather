@@ -1,4 +1,6 @@
 package com.example.weather;
 
-public class UpdateStrategy {
+public interface UpdateStrategy {
+    WeatherData fetch();
+    default void shutdown() {}
 }
