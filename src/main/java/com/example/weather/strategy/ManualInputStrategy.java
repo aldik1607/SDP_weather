@@ -1,4 +1,6 @@
-package com.example.weather;
+package com.example.weather.strategy;
+
+import com.example.weather.model.WeatherData;
 
 public class ManualInputStrategy implements UpdateStrategy {
     private volatile WeatherData manualData;

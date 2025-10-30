@@ -1,4 +1,6 @@
-package com.example.weather;
+package com.example.weather.observer;
+
+import com.example.weather.model.WeatherData;
 
 public class PhoneDisplay implements Observer {
     private final String id;

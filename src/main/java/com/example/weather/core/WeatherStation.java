@@ -1,5 +1,8 @@
-package com.example.weather;
+package com.example.weather.core;
 
+import com.example.weather.observer.Observer;
+import com.example.weather.model.WeatherData;
+import com.example.weather.strategy.UpdateStrategy;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -37,12 +40,20 @@ public class WeatherStation {
         if (strategy == null) throw new IllegalStateException("No update strategy set.");
         lastData = strategy.fetch();
         System.out.println("[WeatherStation] Fetched: " + lastData);
+        if (lastData == null) {
+            System.out.println("[WeatherStation] No data fetched; observers not notified.");
+            return;
+        }
         notifyObservers();
     }
 
 
-    public synchronized void notifyObservers() {
-        for (Observer o : new ArrayList<>(observers)) {
+    public void notifyObservers() {
+        List<Observer> snapshot;
+        synchronized (this) {
+            snapshot = new ArrayList<>(observers);
+        }
+        for (Observer o : snapshot) {
             try {
                 o.update(lastData);
             } catch (Exception ex) {
@@ -50,6 +61,7 @@ public class WeatherStation {
             }
         }
     }
+
 
 
     public synchronized WeatherData getLastData() {

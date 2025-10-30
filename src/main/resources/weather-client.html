@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Live Weather Control Panel</title>
+
+  <!-- SockJS & STOMP -->
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#f4f7fb;
+      --card:#ffffff;
+      --accent:#246bff;
+      --accent-2:#00bfa6;
+      --muted:#6b7280;
+      --shadow: 0 8px 24px rgba(15,23,42,0.06);
+      --radius:12px;
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+      background: linear-gradient(180deg, #f6f9ff 0%, var(--bg) 100%);
+      color:#111827;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      min-height:100vh;
+      padding:28px 16px;
+    }
+
+    header{
+      width:100%;
+      max-width:1200px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      margin-bottom:18px;
+    }
+    header h1{
+      margin:0;
+      font-size:20px;
+      color:var(--accent);
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    header p{ margin:0; color:var(--muted); font-size:13px }
+
+    .wrap{
+      width:100%;
+      max-width:1200px;
+      display:grid;
+      grid-template-columns: 1fr 360px;
+      gap:18px;
+    }
+
+    .card{
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding:18px;
+    }
+
+    /* left: messages + current reading */
+    .left .card { margin-bottom:18px; }
+
+    .toolbar{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      margin-bottom:12px;
+      flex-wrap:wrap;
+    }
+
+    .select, input[type="number"]{
+      padding:10px 12px;
+      border-radius:8px;
+      border:1px solid #e6e9ef;
+      font-size:14px;
+      outline:none;
+      background:#fff;
+    }
+
+    button{
+      padding:10px 14px;
+      border-radius:8px;
+      border:0;
+      font-weight:600;
+      cursor:pointer;
+      background:var(--accent);
+      color:white;
+      box-shadow: 0 6px 18px rgba(36,107,255,0.12);
+    }
+
+    button.ghost{
+      background:#fff;
+      color:var(--accent);
+      border:1px solid #e6e9ef;
+      box-shadow:none;
+    }
+
+    .messages{
+      height:420px;
+      overflow:auto;
+      border-radius:10px;
+      padding:12px;
+      background: linear-gradient(180deg,#fbfdff,#ffffff);
+      border:1px solid #eef3ff;
+    }
+
+    .msg{
+      padding:10px 12px;
+      border-radius:10px;
+      margin-bottom:10px;
+      background:#fff;
+      box-shadow: 0 4px 10px rgba(2,6,23,0.04);
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .msg .left { font-size:14px; color:#0f172a; }
+    .msg .time { font-size:12px; color:var(--muted); min-width:72px; text-align:right; }
+
+    .current{
+      display:flex;
+      gap:18px;
+      align-items:center;
+      justify-content:space-between;
+      padding:12px;
+      border-radius:10px;
+      background: linear-gradient(90deg,#f9fcff, #ffffff);
+      border:1px solid #eef6ff;
+    }
+    .reading{
+      font-size:16px;
+      line-height:1.3;
+      color:#0b1220;
+    }
+    .small { color:var(--muted); font-size:13px; }
+
+    /* right: controls */
+    .controls h3{ margin:0 0 8px 0; font-size:15px; color:#0b1220 }
+    .controls .group { margin-bottom:14px; }
+    .row{ display:flex; gap:8px; align-items:center; margin-top:8px; }
+    .label { font-size:13px; color:var(--muted) }
+
+    .status {
+      padding:10px;
+      background:#fbfdff;
+      border-radius:8px;
+      border:1px solid #eef6ff;
+      display:flex;
+      gap:8px;
+      align-items:center;
+      justify-content:space-between;
+    }
+
+    .badge {
+      padding:6px 10px;
+      border-radius:999px;
+      font-weight:700;
+      font-size:12px;
+      color:white;
+      background:var(--accent-2);
+    }
+
+    footer{
+      margin-top:18px;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    @media (max-width:980px){
+      .wrap{ grid-template-columns: 1fr; }
+      .controls { order:2; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🌤️ Weather Dashboard</h1>
+  <p>Live push notifications — STOMP / SockJS • Control panel for strategies</p>
+</header>
+
+<div class="wrap">
+  <div class="left">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <strong>Real-time Feed</strong>
+          <div class="small">Messages pushed from server (topic: <code>/topic/weather</code>)</div>
+        </div>
+        <div class="small">Server: <span id="serverStatus" class="badge">disconnected</span></div>
+      </div>
+
+      <div class="toolbar" style="margin-top:12px">
+        <button id="btnClear" class="ghost">Clear</button>
+        <button id="btnFetchCurrent" class="ghost">Get Current</button>
+        <button id="btnForceUpdate">Force Update</button>
+      </div>
+
+      <div class="messages" id="messages"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <strong>Latest Reading</strong>
+          <div class="small">Most recent weather values</div>
+        </div>
+        <div id="lastTime" class="small">—</div>
+      </div>
+
+      <div style="margin-top:12px" class="current">
+        <div class="reading" id="readingText">No data yet</div>
+        <div style="text-align:right">
+          <div class="small">Status</div>
+          <div id="strategyBadge" class="badge" style="background:var(--accent)">unknown</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls card">
+    <h3>Controls</h3>
+
+    <div class="group">
+      <div class="label">Select strategy</div>
+      <div class="row">
+        <select id="strategySelect" class="select">
+          <option value="realtime">Realtime (sensor)</option>
+          <option value="batch">Batch (scheduled)</option>
+          <option value="external">External (API)</option>
+          <option value="manual">Manual (set values)</option>
+        </select>
+        <button id="btnSwitch">Switch</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="label">Manual data (°C / % / hPa)</div>
+      <div class="row">
+        <input id="inputTemp" class="select" type="number" step="0.1" placeholder="Temp (°C)" />
+        <input id="inputHum" class="select" type="number" step="0.1" placeholder="Humidity (%)" />
+        <input id="inputPres" class="select" type="number" step="0.1" placeholder="Pressure (hPa)" />
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button id="btnApplyManual">Apply manual (and switch)</button>
+        <button id="btnManualUpdate" class="ghost">Manual update only</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="label">Connection</div>
+      <div class="row status">
+        <div>
+          <div class="small">WebSocket</div>
+          <div id="wsState" style="font-weight:700">disconnected</div>
+        </div>
+        <div style="text-align:right">
+          <div class="small">Messages</div>
+          <div id="msgCount">0</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:12px">
+      <div class="small">API endpoints used:</div>
+      <div class="small" style="color:var(--muted)">
+        POST /api/weather/strategy/{type} • POST /api/weather/strategy/manual •
+        POST /api/weather/manual • POST /api/weather/updateNow • GET /api/weather/current
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Tip: Open DevTools → Console to see network/WS logs. Page served from <code>/static/index.html</code>.
+</footer>
+
+<script>
+  // ---------- config ----------
+  const WS_ENDPOINT = 'http://localhost:8080/ws-weather';
+  const TOPIC = '/topic/weather';
+  const API_PREFIX = '/api/weather';
+
+  // ---------- UI refs ----------
+  const messagesEl = document.getElementById('messages');
+  const serverStatusEl = document.getElementById('serverStatus');
+  const wsStateEl = document.getElementById('wsState');
+  const msgCountEl = document.getElementById('msgCount');
+  const readingTextEl = document.getElementById('readingText');
+  const lastTimeEl = document.getElementById('lastTime');
+  const strategyBadge = document.getElementById('strategyBadge');
+
+  const btnClear = document.getElementById('btnClear');
+  const btnFetchCurrent = document.getElementById('btnFetchCurrent');
+  const btnForceUpdate = document.getElementById('btnForceUpdate');
+
+  const selectStrategy = document.getElementById('strategySelect');
+  const btnSwitch = document.getElementById('btnSwitch');
+
+  const inputTemp = document.getElementById('inputTemp');
+  const inputHum = document.getElementById('inputHum');
+  const inputPres = document.getElementById('inputPres');
+  const btnApplyManual = document.getElementById('btnApplyManual');
+  const btnManualUpdate = document.getElementById('btnManualUpdate');
+
+  // ---------- state ----------
+  let stompClient = null;
+  let msgCount = 0;
+
+  // ---------- helpers ----------
+  function appendMessage(text, type='info') {
+    const div = document.createElement('div');
+    div.className = 'msg';
+    const left = document.createElement('div');
+    left.className = 'left';
+    left.innerHTML = `<div>${text}</div>`;
+    const time = document.createElement('div');
+    time.className = 'time';
+    time.textContent = new Date().toLocaleTimeString();
+    div.appendChild(left);
+    div.appendChild(time);
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    msgCount = msgCount + 1;
+    msgCountEl.textContent = msgCount;
+  }
+
+  function setWsState(connected){
+    if(connected){
+      wsStateEl.textContent = 'connected';
+      wsStateEl.style.color = 'green';
+      serverStatusEl.textContent = 'connected';
+      serverStatusEl.style.background = 'linear-gradient(90deg,#00c2a8,#0077ff)';
+    } else {
+      wsStateEl.textContent = 'disconnected';
+      wsStateEl.style.color = '#c02626';
+      serverStatusEl.textContent = 'disconnected';
+      serverStatusEl.style.background = 'var(--accent)';
+    }
+  }
+
+  // ---------- STOMP connection ----------
+  function connectWs(){
+    try {
+      const socket = new SockJS(WS_ENDPOINT);
+      stompClient = Stomp.over(socket);
+
+      // Optional: disable debug logs from stomp
+      stompClient.debug = function() {};
+
+      stompClient.connect({}, function(frame){
+        setWsState(true);
+        appendMessage('Connected to server');
+        // subscribe
+        stompClient.subscribe(TOPIC, function(message){
+          if(!message || !message.body){ return; }
+          try {
+            const data = JSON.parse(message.body);
+            const text = `T: ${Number(data.temperatureC).toFixed(1)}°C  •  H: ${Number(data.humidity).toFixed(1)}%  •  P: ${Number(data.pressure).toFixed(1)} hPa`;
+            appendMessage(text);
+            updateLatest(data);
+          } catch(e) {
+            appendMessage('Received: ' + message.body);
+          }
+        });
+      }, function(err){
+        setWsState(false);
+        appendMessage('WS error: ' + (err && err.toString ? err.toString() : err), 'error');
+        console.error('STOMP error', err);
+      });
+    } catch(e){
+      appendMessage('WS connect failed: ' + e.message, 'error');
+    }
+  }
+
+  function updateLatest(data){
+    readingTextEl.textContent =
+            `Temp ${Number(data.temperatureC).toFixed(1)}°C · Hum ${Number(data.humidity).toFixed(1)}% · Pres ${Number(data.pressure).toFixed(1)} hPa`;
+    lastTimeEl.textContent = new Date().toLocaleTimeString();
+    // update strategy badge only if server includes strategy name (optional)
+    if(data.strategy){
+      strategyBadge.textContent = data.strategy;
+    }
+  }
+
+  // ---------- REST helpers ----------
+  async function postJson(path, body){
+    const res = await fetch(API_PREFIX + path, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(body)
+    });
+    if(!res.ok){
+      const txt = await res.text().catch(()=>res.statusText);
+      throw new Error('HTTP ' + res.status + ': ' + txt);
+    }
+    return res;
+  }
+
+  async function switchStrategy(type){
+    try {
+      appendMessage(`Switching strategy -> ${type} ...`);
+      const res = await fetch(`${API_PREFIX}/strategy/${encodeURIComponent(type)}`, { method:'POST' });
+      if(!res.ok){
+        const t = await res.text();
+        throw new Error(t || res.statusText);
+      }
+      const text = await res.text();
+      appendMessage('Server: ' + text);
+      strategyBadge.textContent = type;
+    } catch(err){
+      appendMessage('Switch failed: ' + err.message, 'error');
+      console.error(err);
+    }
+  }
+
+  async function switchToManualWithData(obj){
+    try {
+      appendMessage('Switching to manual with initial data...');
+      await postJson('/strategy/manual', obj);
+      appendMessage('Manual strategy applied.');
+      strategyBadge.textContent = 'manual';
+    } catch(err){
+      appendMessage('Manual switch failed: ' + err.message, 'error');
+    }
+  }
+
+  async function manualUpdate(obj){
+    try {
+      appendMessage('Applying manual update...');
+      await postJson('/manual', obj);
+      appendMessage('Manual update applied.');
+      strategyBadge.textContent = 'manual';
+    } catch(err){
+      appendMessage('Manual update failed: ' + err.message, 'error');
+    }
+  }
+
+  async function forceUpdate(){
+    try {
+      appendMessage('Triggering server update...');
+      await postJson('/updateNow', {});
+      appendMessage('Update triggered.');
+    } catch(err){
+      appendMessage('Update failed: ' + err.message, 'error');
+    }
+  }
+
+  async function getCurrent(){
+    try {
+      const res = await fetch(API_PREFIX + '/current');
+      if(res.status === 204){
+        appendMessage('No current data available.');
+        return;
+      }
+      if(!res.ok) throw new Error(res.statusText);
+      const data = await res.json();
+      appendMessage('Current: ' + `T:${data.temperatureC} H:${data.humidity} P:${data.pressure}`);
+      updateLatest(data);
+    } catch(err){
+      appendMessage('Get current failed: ' + err.message, 'error');
+    }
+  }
+
+  // ---------- bindings ----------
+  btnClear.addEventListener('click', ()=>{ messagesEl.innerHTML=''; msgCount=0; msgCountEl.textContent = 0; });
+  btnFetchCurrent.addEventListener('click', getCurrent);
+  btnForceUpdate.addEventListener('click', forceUpdate);
+
+  btnSwitch.addEventListener('click', ()=>{
+    const type = selectStrategy.value;
+    if(type === 'manual'){
+      // guiding user to apply manual data through inputs
+      appendMessage('To switch to manual, use "Apply manual" below with values');
+      return;
+    }
+    switchStrategy(type);
+  });
+
+  btnApplyManual.addEventListener('click', ()=>{
+    const t = parseFloat(inputTemp.value);
+    const h = parseFloat(inputHum.value);
+    const p = parseFloat(inputPres.value);
+    if(Number.isFinite(t) && Number.isFinite(h) && Number.isFinite(p)){
+      const obj = { temperatureC: t, humidity: h, pressure: p };
+      switchToManualWithData(obj);
+    } else {
+      appendMessage('Enter valid numeric values for temp/humidity/pressure', 'error');
+    }
+  });
+
+  btnManualUpdate.addEventListener('click', ()=>{
+    const t = parseFloat(inputTemp.value);
+    const h = parseFloat(inputHum.value);
+    const p = parseFloat(inputPres.value);
+    if(Number.isFinite(t) && Number.isFinite(h) && Number.isFinite(p)){
+      const obj = { temperatureC: t, humidity: h, pressure: p };
+      manualUpdate(obj);
+    } else {
+      appendMessage('Enter valid numeric values for temp/humidity/pressure', 'error');
+    }
+  });
+
+  // ---------- init ----------
+  setWsState(false);
+  connectWs();
+</script>
+</body>
+</html>
