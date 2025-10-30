@@ -14,7 +14,6 @@ public class ExternalApiAdapter implements UpdateStrategy {
     @Override
     public WeatherData fetch() {
         ExternalResponse r = client.fetch();
-        // создаём WeatherData напрямую через конструктор
         return new WeatherData(r.tempC, r.hum, r.pres);
     }
 }

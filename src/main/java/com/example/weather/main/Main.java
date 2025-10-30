@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
 public class Main implements CommandLineRunner {
 
     private final WeatherStation station;
-    private final WebSocketObserver webSocketObserver; // используем bean, а не создаём new
+    private final WebSocketObserver webSocketObserver;
     private final ManualInputStrategy manual;
 
     public Main(WeatherStation station,

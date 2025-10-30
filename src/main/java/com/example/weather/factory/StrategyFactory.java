@@ -19,7 +19,6 @@ public class StrategyFactory {
             case "manual":
                 throw new IllegalArgumentException("Do not create ManualInputStrategy via StrategyFactory. Use the injected bean.");
             case "external":
-                // Adapter usage example
                 return new ExternalApiAdapter(new DummyExternalClient());
             default:
                 throw new IllegalArgumentException("Unknown strategy: " + type);
